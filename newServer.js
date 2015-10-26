@@ -23,8 +23,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+
 var http = require('http');
 var filecache = require('filecache');
+var crypto = require('crypto');
+
+var mime = require('mime');
+var charset = require('charset');
+
+var parseurl = require('url').parse;
+var parsequery = require('querystring').parse;
+
+var validUrl = require('valid-url');
 
 var urlDatabase = require('./urlDatabase.js');
 var processRequest = require('./processRequest.js'); // returns a function
@@ -35,6 +45,7 @@ function cacheDirectory(directory) {
             if (error) {
                 reject(error);
             } else {
+                console.log("Cached " + directory)
                 resolve(cache);
             }
         })
@@ -42,9 +53,6 @@ function cacheDirectory(directory) {
 }
 
 function hashUrl (url) {
-    if (url.indexOf('http://') == -1 && url.indexOf('https://') == -1) {
-        url = "http://" + url;
-    }
     var sha = crypto.createHash('sha1');
     sha.update(url);
     return sha.digest('base64').slice(0, 8).replace('+', '-').replace('=', '_');
@@ -56,7 +64,50 @@ cacheDirectory('static/').then(function (cache) {
 
             var parsedurl = parseurl(request.url);
             var pathname = parsedurl.pathname;
-            var parsedquery = parsequery(parsedurl.query);
+            var parsedQuery = parsequery(parsedurl.query);
+
+            // get ready for some illogical logic buddy
+
+            if (pathname == '/') {
+
+                // index.html is default site when visiting root
+                response.writeHead(200);
+                response.end(cache['/index.html'].toString());
+
+            } else if (pathname in cache) {
+
+                // if it's an actual file in the filecache
+                response.writeHead(200);
+
+                file = cache[pathname];
+                mimeType = mime.lookup(pathname);
+                if (charset(mimeType) == 'utf8') {
+                    response.end(file.toString('utf8')); // send text if text
+                } else {
+                    response.end(file); // bytes if otherwise
+                }
+
+            } else if (pathname == '/shorten/') {
+
+                if ('url' in parsedQuery && validUrl.isWebUri(parsedQuery['url'])) {
+
+                    // stupid node won't let me use let (pun kinda intended)
+                    var hash = hashUrl(parsedQuery['url']);
+                    urlDatabase.storeUrl(database, parsedQuery['url'], hash);
+
+                    response.writeHead(200);
+                    response.end(hash);
+
+                } else {
+                    console.error("Bad Request: " + parsedQuery['url']);
+                    response.writeHead(400);
+                    response.end('400 Bad Request. Did you add "http://" or "https://" at the beginning?');
+                }
+
+            } else {
+                response.writeHead(404);
+                response.end('404 Not Found');
+            }
         }).listen(80, function () {
             console.log('Server listening on port 80');
         })
