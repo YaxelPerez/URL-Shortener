@@ -94,10 +94,12 @@ cacheDirectory('static/').then(function (cache) {
                     // stupid node won't let me use let (pun kinda intended)
                     var hash = hashUrl(parsedQuery['url']); // hash url
                     // store the url and hash in our database
-                    urlDatabase.storeUrl(database, parsedQuery['url'], hash);
-
-                    response.writeHead(200);
-                    response.end(hash); // send back the hash
+                    urlDatabase.storeUrl(database, parsedQuery['url'], hash)
+                        .then(function () {
+                            response.writeHead(200);
+                        response.end(hash); // send back the hash
+                        },
+                        console.error);
 
                 } else {
                     console.error("Bad Request: " + parsedQuery['url']);
@@ -109,13 +111,14 @@ cacheDirectory('static/').then(function (cache) {
 
                 // finally, see if the pathname is a hashed url
                 var hash = pathname.split('/')[1] // get rid of the slash
-                urlDatabase.retrieveUrl(hash).then(function (url) {
+                urlDatabase.retrieveUrl(database, hash).then(function (url) {
                     response.writeHead(301,{
                         "Location": url
                     });
                     response.end();
                 },
                 function (error) {
+                    console.log(error);
                     // we don't have the hash yet :(
                     response.writeHead(404);
                     response.end('404 Not Found');

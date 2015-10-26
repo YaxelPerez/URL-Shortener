@@ -26,12 +26,12 @@ exports.loadDatabase = function (filename) {
     });
 }
 
-exports.retrieveUrl = function (hash) {
-    return new Promise(function (database, resolve, reject) {
-        this.sql.get('SELECT url FROM urls WHERE id=$id', {$id: hash},
+exports.retrieveUrl = function (database, hash) {
+    return new Promise(function (resolve, reject) {
+        database.get('SELECT url FROM urls WHERE id=$id', {$id: hash},
             function (error, row) {
                 if (row) {
-                    resolve(row[url]);
+                    resolve(row['url']);
                 } else {
                     reject(error);
                 }
@@ -41,11 +41,11 @@ exports.retrieveUrl = function (hash) {
 
 exports.storeUrl = function (database, url, hash) {
     return new Promise(function (resolve, reject) {
-        this.sql.run('INSERT INTO urls (url, id) VALUES ($url, $id)',
+        database.run('INSERT INTO urls (url, id) VALUES ($url, $id)',
             {$url: url, $id: hash},
             function (error) {
-                if (error) {
-                    reject();
+                if (error && error.code != 'SQLITE_CONSTRAINT') {
+                    reject(error);
                 } else {
                     resolve();
                 }
