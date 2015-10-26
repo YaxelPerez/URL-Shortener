@@ -1,11 +1,7 @@
-'use strict'
-// I think the refactoring made it worse
-// abandon hope, all ye who enter
-
-// also, hash and id are used synonymously
-// sorry :(
-
 /*
+
+URL Shortener
+
 Copyright (c) 2015 Yaxel Perez
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -27,143 +23,111 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
-var crypto = require('crypto');
+
 var http = require('http');
-var url = require('url');
-var querystring = require('querystring');
-var sqlite3 = require('sqlite3');
 var filecache = require('filecache');
-var validUrl = require('valid-url');
+var crypto = require('crypto');
+
 var mime = require('mime');
+var charset = require('charset');
 
-// lol look at all these dependencies
+var parseurl = require('url').parse;
+var parsequery = require('querystring').parse;
 
-function fixUrl(toFix) {
-     // add the http if it doesn't have it
-    if (toFix.indexOf("http://") == -1 && toFix.indexOf("https://") == -1) {
-        return "http://" + toFix;
-    } else {
-        return toFix;
-    }
-}
+var validUrl = require('valid-url');
 
-function hashUrl(toHash) {
-    // get sha hash of url in base64 and truncate to 8 chars
-    var sha = crypto.createHash('sha1');
-    sha.update(toHash);
-    return sha.digest('base64').slice(0, 8).replace('+', '-').replace('=', '_');
-} // get hash
+var urlDatabase = require('./urlDatabase.js');
+var processRequest = require('./processRequest.js'); // returns a function
 
-function storeUrl(database, url, id) {
-    // ahh es6 when do I use promises halp
+function cacheDirectory(directory) {
     return new Promise(function (resolve, reject) {
-        database.run("INSERT INTO urls (url, id) VALUES ($url, $id);", {$url: url, $id: id},
-            function (error) {
+        filecache(directory, function (error, cache) {
+            if (error) {
                 reject(error);
-            });
-        resolve();
-    });
-}
-
-function retrieveUrl(database, id) {
-    return new Promise(function (resolve, reject) {
-        database.get("SELECT url FROM urls WHERE id=$id", {$id : id},
-            function (error, row) {
-                if (row != undefined) {
-                    resolve(row['url']);
-                } else {
-                    reject(error);
-                }
-            });
-    });
-}
-
-function returnFile(response, cache, filename, status) {
-    if (status == undefined) {
-        status = 200;
-    }
-    var mimeType = mime.lookup(filename);
-
-    response.writeHead(status, {
-        "Content-Type": mimeType
-    });
-    if (mimeType.indexOf("text") != -1 || mimeType == "application/json") {
-        response.end(cache[filename].toString('utf-8'))
-    } else {
-        response.end(cache[filename]);
-    }
-}
-
-function returnHash(database, response, tohash) {
-        response.writeHead(200, {
-            "Content-Type": "text/plain"
-        });
-        var hash = hashUrl(fixUrl(parsedQuery['url']));
-        response.end(hash);
-        return hash;
-    } else {
-        throw "invalid query";
-    }
-}
-
-function redirect(response, id) {
-
-}
-
-function processRequest(cache, database, request, response) {
-    var parsedUrl = url.parse(request.url);
-    var pathname = parsedUrl.pathname;
-    var query = parsedUrl.query;
-
-    if (pathname == "/") {
-        returnFile(response, cache, "/index.html");
-    } else if (pathname in cache) {
-        returnFile(response, cache, pathname);
-    } else if (pathname == "/shorten/") {
-        try {
-
-            var parsedQuery = querystring.parse(query);
-            if ('url' in parsedQuery) {
-                queryUrl =
-                // todo fix this
-            hash = returnHash(response, query);
-            storeUrl(database, hash);
-        } catch (error) {
-            console.error(error);
-            response.writeHead(400);
-            response.end("Bad Request");
-        }
-    } else {
-        var id = pathname.split('/')[1]; // get the thing without /
-        retrieveUrl(database, id).then(function(shortenedUrl) {
-            response.writeHead(301, {
-                "Content-Type": "text/plain",
-                "Location": shortenedUrl
-            });
-            response.end();
-        },
-        function (error) {
-            if (error == undefined) {
-                console.error("Invalid Query");
-                returnFile(response, cache, "/notFound.html", 400);
             } else {
-                console.error("Database Error: " + error);
-                response.writeHead(501);
-                response.end("501 Internal Server Error");
+                console.log("Cached " + directory)
+                resolve(cache);
             }
         })
-    }
+    });
 }
 
-filecache('static/', function(err, cache) {
-    console.log("Loaded /static/ into cache.")
-    var db = new sqlite3.Database('urls.db'); // load sqlite database
-    console.log("Loaded database urls.db.")
+function hashUrl (url) {
+    var sha = crypto.createHash('sha1');
+    sha.update(url);
+    return sha.digest('base64').slice(0, 8).replace('+', '-').replace('=', '_');
+}
 
-    http.createServer(function (request, response) {
-        // TODO: Add proper headers (mime type)
-        processRequest(cache, db, request, response);
-    }).listen(80, function() {
-        console.log("Listening on port 80");
-    });
-});
+cacheDirectory('static/').then(function (cache) {
+    urlDatabase.loadDatabase('urls.db').then(function (database) {
+        http.createServer(function (request, response) {
+
+            var parsedurl = parseurl(request.url);
+            var pathname = parsedurl.pathname;
+            var parsedQuery = parsequery(parsedurl.query);
+
+            // get ready for some illogical logic buddy
+
+            if (pathname == '/') {
+
+                // index.html is default site when visiting root
+                response.writeHead(200);
+                response.end(cache['/index.html'].toString());
+
+            } else if (pathname in cache) {
+
+                // if it's an actual file in the filecache
+                response.writeHead(200);
+
+                file = cache[pathname];
+                mimeType = mime.lookup(pathname);
+                if (charset(mimeType) == 'utf8') {
+                    response.end(file.toString('utf8')); // send text if text
+                } else {
+                    response.end(file); // bytes if otherwise
+                }
+
+            } else if (pathname == '/shorten/') {
+
+                if ('url' in parsedQuery && validUrl.isWebUri(parsedQuery['url'])) {
+
+                    // stupid node won't let me use let (pun kinda intended)
+                    var hash = hashUrl(parsedQuery['url']); // hash url
+                    // store the url and hash in our database
+                    urlDatabase.storeUrl(database, parsedQuery['url'], hash);
+
+                    response.writeHead(200);
+                    response.end(hash); // send back the hash
+
+                } else {
+                    console.error("Bad Request: " + parsedQuery['url']);
+                    response.writeHead(400);
+                    response.end('400 Bad Request. Did you add "http://" or "https://" at the beginning?');
+                }
+
+            } else {
+
+                // finally, see if the pathname is a hashed url
+                var hash = pathname.split('/')[1] // get rid of the slash
+                urlDatabase.retrieveUrl(hash).then(function (url) {
+                    response.writeHead(301,{
+                        "Location": url
+                    });
+                    response.end();
+                },
+                function (error) {
+                    // we don't have the hash yet :(
+                    response.writeHead(404);
+                    response.end('404 Not Found');
+
+                });
+
+            }
+        }).listen(80, function () {
+            console.log('Server listening on port 80');
+        })
+    },
+    console.error) // pass error to console.error to log to console
+},
+    console.error
+);
