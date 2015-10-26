@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>URL Shortener</title>
+    <meta name="Description" content="URL Shortening" />
+    <meta charset="UTF-8" />
+    <script type="text/javascript" src="/jquery.js"></script>
+    <script type="text/javascript">
+    window.onsubmit = function() {
+        console.log(document.forms['urlBox']['url'].value);
+        $.get(
+            'shorten/?url=' + document.forms['urlBox']['url'].value,
+            function (data) {
+                document.getElementById('shortened').innerHTML = "localhost/" + data;
+            }
+        );
+    }
+    </script>
+</head>
+<body>
+    <h1>URL Shortener</h1>
+    <form name="urlBox" action="javascript:void(0);">
+        <input name="url" autofocus="true" type="url" placeholder="enter url here" />
+        <input type="submit">
+    </form>
+    <div id="shortened">
+    </div>
+</body>
+</html>
