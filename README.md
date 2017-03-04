@@ -1,4 +1,5 @@
 # URL-Shortener
 
-A simple URL Shortener thing
-Try it out I guess, it's got a MIT Open Source License thing in there.
+hi sorry for bad english
+
+I made this when I was 15 okay don't judge
